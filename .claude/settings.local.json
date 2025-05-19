@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.ireps.gov.in)"
+    ],
+    "deny": []
+  }
+}
