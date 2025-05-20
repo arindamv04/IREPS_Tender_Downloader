@@ -1,37 +1,69 @@
-# Tender Documents Downloader: Chrome Extension Summary
+# Tender Documents Downloader
 
-## Purpose
+A Chrome extension specifically optimized for government tender portals to efficiently download and organize tender documents.
 
-The Tender Documents Downloader is a Chrome extension designed to streamline the process of downloading government tender documents. Government procurement portals typically contain multiple supporting documents (between 2 to 20 files per tender) that must be downloaded and organized for bid preparation. 
+## Overview
 
-## Key Problem Solved
+The Tender Documents Downloader is designed to streamline the procurement process by automatically downloading all tender documents with a single click and organizing them into timestamped folders. The extension is particularly optimized for the Indian Railway Electronic Procurement System (IREPS) but works with many other tender portals.
 
-This extension addresses several critical challenges in the procurement process:
+## Problem Solved
 
-1. **Session Timeout Issues**: Government procurement portals often expire user sessions after brief periods of inactivity, typically permitting only one login per hour. This creates significant pressure to quickly collect all necessary documents.
+Government procurement portals present several unique challenges:
 
-2. **Document Organization**: Manually downloading and organizing 2-20 supporting documents for each tender is time-consuming and prone to error.
+- **Time-Critical Access**: User sessions on government portals typically expire after short periods of inactivity (often 15-30 minutes)
+- **Login Restrictions**: Many portals limit users to one login per hour, adding pressure to maximize productivity during each session
+- **Document Volume**: Each tender contains between 2-20 supporting documents that must be downloaded individually
+- **Manual Organization**: Traditional download methods require tedious individual file management and folder creation
 
-3. **Efficiency**: The traditional method of clicking each document individually, waiting for downloads, and creating folders causes delays and reduces the number of tenders that can be evaluated within the limited session time.
+## Key Features
 
-## How It Works
+- **One-Click Download**: Captures all tender documents on a page with a single button press
+- **Automatic Organization**: Creates a timestamped folder named after the tender for proper document management
+- **IREPS Optimization**: Special handling for IREPS document structure and various document access patterns
+- **Robust Link Detection**: Identifies downloadable documents through multiple detection methods:
+  - Direct download links
+  - "Download Tender Doc" buttons 
+  - Railway document links with window.open handlers
+  - PDF links with specific styling patterns
+- **Relative URL Handling**: Automatically resolves relative URLs to their full paths
 
-The extension provides a simple one-click solution that:
+## Installation
 
-1. Scans the current tender page for all downloadable documents using intelligent detection of file links based on extensions, keywords, and HTML attributes.
+1. Download or clone this repository
+2. Open Chrome and navigate to `chrome://extensions/`
+3. Enable "Developer mode" using the toggle in the top-right corner
+4. Click "Load unpacked" and select the extension directory
 
-2. Creates a timestamped folder with the tender name automatically, ensuring all documents are properly organized by tender.
+## Usage
 
-3. Downloads all detected documents into this folder simultaneously, eliminating the need for manual clicking and organization.
+1. Navigate to a tender page containing downloadable documents
+2. Click on the extension icon in your toolbar
+3. Press the "Download All Documents" button
+4. All documents will be downloaded to a timestamped folder in your Downloads directory
+5. Move to the next tender page and repeat the process
 
-4. Allows the user to quickly move to the next tender page, maximizing the number of tenders that can be processed within the limited login window.
+## Supported Document Types
+
+The extension detects and downloads:
+- PDF files
+- Word documents (.doc, .docx)
+- Excel spreadsheets (.xls, .xlsx)
+- Various other document formats commonly used in tenders
 
 ## Benefits
 
-- **Time Savings**: Reduces document collection time from minutes to seconds per tender
-- **Organization**: Automatically sorts documents into properly named folders
-- **Reduced Session Timeouts**: Minimizes the risk of session expiration during document collection
-- **Higher Productivity**: Allows procurement professionals to evaluate more tenders within the limited login window
-- **Reduced Errors**: Eliminates the possibility of missing important documents or files
+- **Time Efficiency**: Reduces document collection from several minutes to seconds per tender
+- **Session Maximization**: Process more tenders within limited login windows
+- **Automatic Organization**: Eliminates manual folder creation and file sorting
+- **Consistency**: Ensures all documents are captured without missing files
 
-The extension enables procurement professionals to focus on evaluating tender requirements rather than struggling with the mechanics of document collection and organization, ultimately leading to more informed bidding decisions and better procurement outcomes.
+## Troubleshooting
+
+If documents aren't being detected:
+1. Make sure you're on a tender page with downloadable documents
+2. Try refreshing the page before clicking the extension button
+3. For IREPS-specific issues, check if you're logged in properly
+
+## License
+
+MIT License - Feel free to modify and use for your procurement needs
