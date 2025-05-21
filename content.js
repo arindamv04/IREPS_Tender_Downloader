@@ -190,38 +190,53 @@ function findDownloadableDocuments() {
   return uniqueDocuments;
 }
 
-// inject download buttons into search results page
+// inject download buttons into search results page, retry on dynamic changes
 const isSearchResultsPage = window.location.pathname.includes('anonymSearch.do');
 if (isSearchResultsPage) {
   const style = document.createElement('style');
   style.textContent = '.td-download-btn { margin-left: 5px; padding: 2px 6px; font-size: 0.9em; }';
   document.head.appendChild(style);
   injectSearchResultsButtons();
+  const observer = new MutationObserver(() => injectSearchResultsButtons());
+  observer.observe(document.body, { childList: true, subtree: true });
 }
 
 function injectSearchResultsButtons() {
-  // Locate the "View Tender Details" icon link and inject a download button next to it
-  const anchors = Array.from(
-    document.querySelectorAll('img[title="View Tender Details"]')
-  )
-    .map(img => img.closest('a'))
-    .filter(a => a);
-  console.log('injectSearchResultsButtons: found', anchors.length, 'tender detail icons');
-  anchors.forEach(link => {
-    if (link.nextElementSibling && link.nextElementSibling.classList.contains('td-download-btn')) {
-      return;
-    }
-    const btn = document.createElement('button');
-    btn.textContent = 'Download Docs';
-    btn.className = 'td-download-btn';
-    link.parentNode.insertBefore(btn, link.nextSibling);
-    btn.addEventListener('click', e => {
-      e.preventDefault();
-      const onclick = link.getAttribute('onclick') || '';
-      const url = extractUrlFromOnclick(onclick);
-      handleRowDownload(url, btn);
+  try {
+    const imgSelectors = [
+      'img[title="View Tender Details"]',
+      'img[alt="View Tender Details"]',
+      'img[title="View Tender Page"]',
+      'img[alt="View Tender Page"]'
+    ];
+    const anchors = Array.from(
+      document.querySelectorAll(imgSelectors.join(','))
+    )
+      .map(img => img.closest('a'))
+      .filter(a => a && a.getAttribute('onclick'));
+    console.log('injectSearchResultsButtons: found', anchors.length, 'tender detail links');
+    anchors.forEach(link => {
+      try {
+        const existing = link.parentNode.querySelector('.td-download-btn');
+        if (existing) return;
+        const onclick = link.getAttribute('onclick') || '';
+        const url = extractUrlFromOnclick(onclick);
+        if (!url) return;
+        const btn = document.createElement('button');
+        btn.textContent = 'Download Docs';
+        btn.className = 'td-download-btn';
+        link.insertAdjacentElement('afterend', btn);
+        btn.addEventListener('click', e => {
+          e.preventDefault();
+          handleRowDownload(url, btn);
+        });
+      } catch (err) {
+        console.error('injectSearchResultsButtons row error', err);
+      }
     });
-  });
+  } catch (err) {
+    console.error('Error injecting download buttons in search results', err);
+  }
 }
 
 async function handleRowDownload(tenderUrl, buttonEl) {
@@ -230,17 +245,24 @@ async function handleRowDownload(tenderUrl, buttonEl) {
   buttonEl.textContent = 'Loading...';
   try {
     const res = await fetch(tenderUrl, { credentials: 'include' });
+    if (!res.ok) throw new Error(`Failed to fetch tender page: ${res.status}`);
     const html = await res.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
+    const doc = new DOMParser().parseFromString(html, 'text/html');
     const documents = extractDocumentsFromDocument(doc, tenderUrl);
+    if (!documents.length) {
+      buttonEl.textContent = 'No docs';
+      setTimeout(() => { buttonEl.textContent = orig; }, 3000);
+      return;
+    }
     chrome.runtime.sendMessage({ action: 'downloadDocuments', documents, pageTitle: doc.title });
-  } catch {
+    buttonEl.textContent = 'Started';
+    setTimeout(() => { buttonEl.textContent = orig; }, 2000);
+  } catch (err) {
+    console.error('handleRowDownload error', err);
     buttonEl.textContent = 'Error';
     setTimeout(() => { buttonEl.textContent = orig; }, 3000);
   } finally {
     buttonEl.disabled = false;
-    buttonEl.textContent = orig;
   }
 }
 
