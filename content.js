@@ -2,7 +2,7 @@
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
   if (request.action === "findDocuments") {
     console.log('Extension activated: searching for documents...');
-    const documents = findDownloadableDocuments();
+    const documents = extractDocumentsFromDocument(document, window.location.href);
     console.log('Documents found:', documents.length, documents);
     sendResponse({ documents: documents });
   }
@@ -188,4 +188,156 @@ function findDownloadableDocuments() {
   
   console.log('Final document list:', uniqueDocuments);
   return uniqueDocuments;
+}
+
+// inject download buttons into search results page
+const isSearchResultsPage = window.location.pathname.includes('anonymSearch.do');
+if (isSearchResultsPage) {
+  const style = document.createElement('style');
+  style.textContent = '.td-download-btn { margin-left: 5px; padding: 2px 6px; font-size: 0.9em; }';
+  document.head.appendChild(style);
+  injectSearchResultsButtons();
+}
+
+function injectSearchResultsButtons() {
+  // Locate the "View Tender Details" icon link and inject a download button next to it
+  const anchors = Array.from(
+    document.querySelectorAll('img[title="View Tender Details"]')
+  )
+    .map(img => img.closest('a'))
+    .filter(a => a);
+  console.log('injectSearchResultsButtons: found', anchors.length, 'tender detail icons');
+  anchors.forEach(link => {
+    if (link.nextElementSibling && link.nextElementSibling.classList.contains('td-download-btn')) {
+      return;
+    }
+    const btn = document.createElement('button');
+    btn.textContent = 'Download Docs';
+    btn.className = 'td-download-btn';
+    link.parentNode.insertBefore(btn, link.nextSibling);
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      const onclick = link.getAttribute('onclick') || '';
+      const url = extractUrlFromOnclick(onclick);
+      handleRowDownload(url, btn);
+    });
+  });
+}
+
+async function handleRowDownload(tenderUrl, buttonEl) {
+  const orig = buttonEl.textContent;
+  buttonEl.disabled = true;
+  buttonEl.textContent = 'Loading...';
+  try {
+    const res = await fetch(tenderUrl, { credentials: 'include' });
+    const html = await res.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const documents = extractDocumentsFromDocument(doc, tenderUrl);
+    chrome.runtime.sendMessage({ action: 'downloadDocuments', documents, pageTitle: doc.title });
+  } catch {
+    buttonEl.textContent = 'Error';
+    setTimeout(() => { buttonEl.textContent = orig; }, 3000);
+  } finally {
+    buttonEl.disabled = false;
+    buttonEl.textContent = orig;
+  }
+}
+
+function extractUrlFromOnclick(onclick) {
+  if (!onclick) return '';
+  const m = onclick.match(/postRequestNewWindow\(\s*['"]([^'"]+)/i) ||
+            onclick.match(/window\.open\(['"]([^'"]+)/i) ||
+            onclick.match(/location\.href\s*=\s*['"]([^'"]+)/i);
+  if (m && m[1]) {
+    let u = m[1];
+    if (u.startsWith('/')) u = window.location.origin + u;
+    return u;
+  }
+  return '';
+}
+
+function extractDocumentsFromDocument(doc, baseUrl) {
+  const documentsList = [];
+  const baseOrigin = (() => { try { return new URL(baseUrl).origin; } catch { return ''; } })();
+  const baseHostname = (() => { try { return new URL(baseUrl).hostname; } catch { return ''; } })();
+
+  const tenderDocButtons = doc.querySelectorAll('div.styled-button-8[onclick*="downloadtenderDoc"]');
+  tenderDocButtons.forEach(button => {
+    let documentUrl = '';
+    try {
+      const scripts = doc.querySelectorAll('script');
+      for (const script of scripts) {
+        if (script.textContent.includes('downloadtenderDoc')) {
+          const urlMatch = script.textContent.match(/downloadtenderDoc[^{]*?{[^}]*?url\s*=\s*['"]([^'"]+)/is);
+          if (urlMatch?.[1]) {
+            documentUrl = urlMatch[1];
+            if (documentUrl.startsWith('/')) documentUrl = baseOrigin + documentUrl;
+            break;
+          }
+        }
+      }
+    } catch {}
+    if (!documentUrl) {
+      const idInput = doc.querySelector('input[name="tenderID"]');
+      if (idInput?.value) {
+        documentUrl = `${baseOrigin}/ireps/etender/document/tenderDocument.do?etID=${idInput.value}`;
+      } else {
+        documentUrl = baseUrl;
+      }
+    }
+    documentsList.push({ url: documentUrl, filename: `Tender_Document_${Date.now()}.pdf`, text: button.textContent.trim() });
+  });
+
+  const railwayLinks = doc.querySelectorAll('a[href="#"][onclick*="window.open"][onclick*=".pdf"]');
+  railwayLinks.forEach(link => {
+    const onclick = link.getAttribute('onclick');
+    const match = onclick.match(/window\.open\(['"]([^'"]*\.pdf[^'"]*)/i);
+    if (match?.[1]) {
+      let pdfUrl = match[1];
+      if (pdfUrl.startsWith('/')) pdfUrl = baseOrigin + pdfUrl;
+      const fontEl = link.querySelector('font');
+      const filename = fontEl?.textContent.trim().endsWith('.pdf') ? fontEl.textContent.trim() : pdfUrl.split('/').pop();
+      documentsList.push({ url: pdfUrl, filename, text: link.textContent.trim() || filename });
+    }
+  });
+
+  const railwayFonts = doc.querySelectorAll('font[color="#0033FF"][title="Railway document"], font[title="Railway document"]');
+  railwayFonts.forEach(fontEl => {
+    const parent = fontEl.closest('a[onclick*="window.open"]');
+    if (parent) {
+      const onclick = parent.getAttribute('onclick');
+      const match = onclick.match(/window\.open\(['"]([^'"]*\.pdf[^'"]*)/i);
+      if (match?.[1]) {
+        let pdfUrl = match[1];
+        if (pdfUrl.startsWith('/')) pdfUrl = baseOrigin + pdfUrl;
+        const filename = fontEl.textContent.trim();
+        documentsList.push({ url: pdfUrl, filename, text: filename });
+      }
+    }
+  });
+
+  const generic = doc.querySelectorAll('[onclick*="window.open"][onclick*=".pdf"]');
+  generic.forEach(el => {
+    if (el.matches('a[href="#"]') || el.querySelector('font[color="#0033FF"]')) return;
+    const onclick = el.getAttribute('onclick');
+    const match = onclick.match(/window\.open\(['"]([^'"]*\.pdf[^'"]*)/i);
+    if (match?.[1]) {
+      let pdfUrl = match[1];
+      if (pdfUrl.startsWith('/')) pdfUrl = baseOrigin + pdfUrl;
+      const filename = pdfUrl.split('/').pop();
+      documentsList.push({ url: pdfUrl, filename, text: el.textContent.trim() || filename });
+    }
+  });
+
+  const unique = [];
+  const seen = new Set();
+  documentsList.forEach(d => {
+    if (!seen.has(d.url)) {
+      seen.add(d.url);
+      unique.push(d);
+    }
+  });
+
+  return unique;
 }

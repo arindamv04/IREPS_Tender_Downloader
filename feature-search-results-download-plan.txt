@@ -1,0 +1,104 @@
+Feature Plan: In-Page Download Button in Search Results
+=====================================================
+
+Objective
+---------
+Enhance the Tender Documents Downloader extension to inject a "Download Documents"
+button next to each tender in the IREPS search results page, allowing users to
+download all PDF attachments for that tender without navigating into its detail page.
+
+Scope & Requirements
+---------------------
+- Target the IREPS anonymSearch.do search results page (HTML snapshot: view-source_https___www.ireps.gov.in_epsn_anonymSearch.do.html).
+- For each tender row, detect the existing "View Tender Page" link in the Actions column.
+- Inject a new button labeled "Download Docs" immediately adjacent to the link.
+- Upon clicking "Download Docs":
+  * Fetch the tender detail page HTML via XHR/fetch (without full page navigation).
+  * Parse the HTML and extract all downloadable document URLs using the same logic as content.js.
+  * Relay the extracted document list to the background script to trigger bulk download (reuse existing downloadAllDocuments).
+- Provide inline feedback (spinner or disabled state) on the injected button during fetch/extraction/download.
+- Handle errors gracefully (network failures, no documents found).
+
+High-Level Solution
+-------------------
+1. Detect Search Results Page in content.js by checking window.location.pathname for 'anonymSearch.do'.
+2. Write a new function `injectSearchResultsButtons()` in content.js:
+   - Select all result rows: identify the table containing the search results.
+   - For each row, locate the cell in the Actions column next to the existing tender link.
+   - Append a new `<button class="td-download-btn">Download Docs</button>` with click handler.
+3. On button click, call an async handler `handleRowDownload(tenderUrl, rowElement)`:
+   a. Disable the button and show a spinner indicator inside it.
+   b. Fetch the tender detail page HTML (`fetch(tenderUrl, { credentials: 'include' })`).
+   c. Parse fetched HTML into a DOM (use `DOMParser`).
+   d. Invoke a shared extraction helper (refactor `findDownloadableDocuments` to accept a Document object).
+   e. Send the extracted list of `{url, filename, text}` to the background script via `chrome.runtime.sendMessage({action:'downloadDocuments', documents, pageTitle})`.
+   f. Restore button state after sendMessage returns (or on error).
+4. Refactor content.js helpers:
+   - Export/factor out `extractDocumentsFromDocument(targetDocument)` accepting a Document instance.
+   - Adjust the existing onMessage listener to call this helper on the live page when request.action == 'findDocuments'.
+5. Ensure manifest.json content_scripts include content.js on the IREPS search results page.
+
+Detailed Implementation Steps
+-----------------------------
+
+### 1. content.js modifications
+
+- At top of content.js, add detection of search-results pages:
+  ```js
+  const isSearchResultsPage = window.location.pathname.includes('anonymSearch.do');
+  ```
+- Add helper `extractDocumentsFromDocument(doc)`:
+  ```js
+  function extractDocumentsFromDocument(doc) {
+    // copy/paste and adapt findDownloadableDocuments() logic, but operate on 'doc'
+    // return an array of {url, filename, text}
+  }
+  ```
+- Invoke injection on page load if `isSearchResultsPage`:
+  ```js
+  if (isSearchResultsPage) {
+    injectSearchResultsButtons();
+  }
+  ```
+- Implement `injectSearchResultsButtons()`:
+  - Query the results table rows (e.g. `document.querySelectorAll('table.[resultTableClass] > tbody > tr')`).
+  - For each row, find the existing link cell (Actions column) and extract its href or onclick URL.
+  - Append a custom button and attach `handleRowDownload(url, row)`.
+
+### 2. Row download handler
+
+- Add `async function handleRowDownload(tenderUrl, rowEl) { ... }`:
+  1. Update button UI to loading (e.g. disable + spinner).
+  2. `const response = await fetch(tenderUrl, { credentials: 'include' });`
+  3. `const htmlText = await response.text();`
+  4. `const doc = new DOMParser().parseFromString(htmlText, 'text/html');`
+  5. `const documents = extractDocumentsFromDocument(doc);`
+  6. `chrome.runtime.sendMessage({ action: 'downloadDocuments', documents, pageTitle: doc.title });`
+  7. Reset button UI.
+
+### 3. manifest.json review
+
+- Ensure `content.js` is injected on `*://*.ireps.gov.in/ireps/*anonymSearch.do*` (covered by `<all_urls>` in host_permissions and content_scripts).
+
+### 4. background.js reuse
+
+- No changes required: background.js already implements `downloadAllDocuments` to handle a generic array of `{url, filename, text}` and a `pageTitle`.
+
+### 5. Styling & UX
+
+- In content.css or inline styles, define `.td-download-btn` for consistent styling with extension UI.
+- Use a minimal spinner/icon or change button text to "Downloading..." during action.
+
+### 6. Testing & Validation
+
+- Load the unpacked extension and navigate to an IREPS search results page.
+- Verify "Download Docs" buttons appear next to each tender.
+- Click a button, confirm fetch occurs (use devtools Network tab), and that download folder is created with correct timestamp and files.
+- Test error handling (e.g. temporarily block network) to see user-friendly feedback.
+
+### 7. Documentation & Release Notes
+
+- Update README.md or CHANGELOG.md describing the new in-page download button feature.
+- Include a screenshot of the search results page with the new button visible.
+
+Reference: view-source_https___www.ireps.gov.in_epsn_anonymSearch.do.html
